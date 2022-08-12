@@ -89,8 +89,8 @@ $ mark cat :example
 $ mark cat 2022-08-12_14:04:52Z_Friday
 ```
 
-**Look at note using a Pager**
-```bash
+**Look at notes using a pager**
+```bashgo
 ## Opens a pager with all notes (uses whats in env PAGER or less) 
 $ mark pager 
 
