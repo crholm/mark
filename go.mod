@@ -1,4 +1,4 @@
-module mark
+module github.com/crholm/mark
 
 go 1.18
 

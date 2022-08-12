@@ -2,9 +2,9 @@ package fss
 
 import (
 	"fmt"
+	"github.com/crholm/mark"
 	"io/ioutil"
 	"log"
-	"mark"
 	"os"
 	"path/filepath"
 	"time"

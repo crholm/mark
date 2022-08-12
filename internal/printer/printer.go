@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/charmbracelet/glamour"
-	"mark"
+	"github.com/crholm/mark"
 	"strings"
 	"time"
 )
