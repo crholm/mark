@@ -10,10 +10,11 @@ import (
 	"time"
 )
 
-func SaveNote(meta mark.Header, content []byte) error {
+func SaveNote(meta mark.Header, content []byte) (string, error) {
+	filename := GetFullPath(meta)
 	_ = os.MkdirAll(GetPath(meta), 0755)
-	err := ioutil.WriteFile(GetFullPath(meta), content, 0644)
-	return err
+	err := ioutil.WriteFile(filename, content, 0644)
+	return filename, err
 }
 
 func GetFilename(meta mark.Header) string {

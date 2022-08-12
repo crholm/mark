@@ -9,21 +9,24 @@ import (
 )
 
 type Header struct {
-	Title     string
-	Tags      []string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Title     string    `yaml:"title"`
+	Alias     string    `yaml:"alias"`
+	Tags      []string  `yaml:"tags"`
+	CreatedAt time.Time `yaml:"created_at"`
+	UpdatedAt time.Time `yaml:"updated_at"`
 }
 
 type Index struct {
-	IdToNotes map[int]string   `json:"id_to_notes"`
-	TagsToId  map[string][]int `json:"tags_to_id"`
+	IdToName map[int]string   `json:"id_to_name"`
+	TagsToId map[string][]int `json:"tags_to_id"`
+	IdToTags map[int][]string `json:"id_to_tags"`
 }
 
 func NewIndex() Index {
 	return Index{
-		IdToNotes: map[int]string{},
-		TagsToId:  map[string][]int{},
+		IdToName: map[int]string{},
+		TagsToId: map[string][]int{},
+		IdToTags: map[int][]string{},
 	}
 }
 

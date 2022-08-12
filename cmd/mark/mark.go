@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/modfin/henry/compare"
+	"github.com/modfin/henry/mapz"
 	"github.com/modfin/henry/slicez"
 	"github.com/urfave/cli/v2"
 	"io"
@@ -36,7 +39,7 @@ func main() {
 		Commands: []*cli.Command{
 			{
 				Name:   "reindex",
-				Action: reindex,
+				Action: reIndex,
 			},
 			{
 				Name: "git",
@@ -79,6 +82,12 @@ func main() {
 			},
 			{
 				Name: "pager",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "pick",
+						Aliases: []string{"p"},
+					},
+				},
 				Action: func(c *cli.Context) error {
 					prefix := c.Args().First()
 
@@ -90,6 +99,14 @@ func main() {
 					if len(files) == 0 {
 						fmt.Println("no entries")
 						return nil
+					}
+
+					if c.Bool("pick") {
+						file, err := pickFile(files)
+						if err != nil {
+							return err
+						}
+						files = []string{file}
 					}
 
 					return page(files, printer.Of(c.String("format")))
@@ -97,6 +114,12 @@ func main() {
 			},
 			{
 				Name: "cat",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "pick",
+						Aliases: []string{"p"},
+					},
+				},
 				Action: func(c *cli.Context) error {
 					prefix := c.Args().First()
 
@@ -108,6 +131,14 @@ func main() {
 					if len(files) == 0 {
 						fmt.Println("no entries")
 						return nil
+					}
+
+					if c.Bool("pick") {
+						file, err := pickFile(files)
+						if err != nil {
+							return err
+						}
+						files = []string{file}
 					}
 
 					_, err = io.Copy(os.Stdout, cat(files, printer.Of(c.String("format"))))
@@ -130,12 +161,21 @@ func main() {
 				},
 			},
 			{
+				Name: "rm",
+				Action: func(c *cli.Context) error {
+					filename := c.Args().First()
+
+					file, err := fss.GetFilenameToPath(filename)
+					if err != nil {
+						return err
+					}
+					fmt.Println("rm", file)
+					return os.Remove(file)
+				},
+			},
+			{
 				Name: "edit",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:    "offset",
-						Aliases: []string{"o"},
-					},
 					&cli.BoolFlag{
 						Name: "raw",
 					},
@@ -164,7 +204,13 @@ func editNote(c *cli.Context) error {
 		fmt.Println("no entries")
 		return nil
 	}
-	file := slicez.Nth(files, c.Int("offset"))
+
+	file, err := pickFile(files)
+	if err != nil {
+		return err
+	}
+
+	defer updateIndex(file)
 
 	if c.Bool("raw") {
 		return editFile(file)
@@ -207,6 +253,26 @@ func editNote(c *cli.Context) error {
 	return ioutil.WriteFile(file, data, 0644)
 }
 
+func pickFile(files []string) (string, error) {
+
+	if len(files) == 1 {
+		return files[0], nil
+	}
+
+	files = slicez.Take(files, 10)
+
+	for i, f := range files {
+		fmt.Println(i+1, "-", strings.TrimSuffix(filepath.Base(f), ".md"))
+	}
+	fmt.Print("> ")
+	var i int
+	_, err := fmt.Scanf("%d", &i)
+	if err != nil {
+		return "", err
+	}
+	return slicez.Nth(files, i-1), nil
+}
+
 func newNote(c *cli.Context) error {
 	meta := mark.Header{
 		Title:     c.String("t"),
@@ -231,33 +297,43 @@ func newNote(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	err = fss.SaveNote(meta, note)
+	filename, err := fss.SaveNote(meta, note)
 	if err != nil {
 		return err
 	}
-	return nil
+	return updateIndex(filename)
 }
 
 func ls(prefix string) ([]string, error) {
-	var date = regexp.MustCompile("^[0-9-:]*$")
+	var filename = regexp.MustCompile("^[0-9-_:]*(|Z)(|_)(|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)()$")
 
-	if len(prefix) == 0 || date.MatchString(prefix) {
-		files, err := filepath.Glob(fmt.Sprintf("%s/*/*/%s*.md", fss.GetLibPath(), prefix))
+	if len(prefix) == 0 || filename.MatchString(prefix) {
+
+		year := "*"
+		month := "*"
+
+		if len(prefix) > 3 {
+			year = prefix[0:4]
+		}
+		if len(prefix) > 6 {
+			month = prefix[5:7]
+		}
+
+		glob := fmt.Sprintf("%s/%s/%s/%s*.md", fss.GetLibPath(), year, month, prefix)
+		files, err := filepath.Glob(glob)
 		if err != nil {
 			return nil, err
 		}
 		return slicez.Reverse(slicez.Sort(files)), nil
 	}
 
-	data, _ := ioutil.ReadFile(filepath.Join(fss.GetStoragePath(), "index.tsar"))
-	tsIndex, err := tsar.UnmarshalIndex(data)
-	if err != nil {
-		return nil, err
+	var specificTag = prefix[0] == ':' || prefix[0] == '#'
+	if specificTag {
+		prefix = prefix[1:]
 	}
-	entries, err := tsIndex.Find(prefix, tsar.MatchPrefix)
-	if err != nil {
-		return nil, err
-	}
+
+	var data []byte
+	var err error
 
 	index := mark.NewIndex()
 	data, err = ioutil.ReadFile(filepath.Join(fss.GetStoragePath(), "index.json"))
@@ -270,24 +346,48 @@ func ls(prefix string) ([]string, error) {
 	}
 
 	tagFiles := slicez.Map(index.TagsToId[prefix], func(a int) string {
-		f, err := fss.GetFilenameToPath(index.IdToNotes[a])
+		f, err := fss.GetFilenameToPath(index.IdToName[a])
 		if err != nil {
+			return ""
+		}
+		if _, err := os.Stat(f); errors.Is(err, os.ErrNotExist) {
 			return ""
 		}
 		return f
 	})
 
-	tsFiles := slicez.Uniq(slicez.Flatten(slicez.Map(entries, func(entry *tsar.Entry) []string {
-		return slicez.Map(entry.Pointers, func(a uint32) string {
-			f, err := fss.GetFilenameToPath(index.IdToNotes[int(a)])
-			if err != nil {
-				return ""
-			}
-			return f
-		})
-	})))
+	var tsFiles []string
+	if !specificTag {
+		data, err = ioutil.ReadFile(filepath.Join(fss.GetStoragePath(), "index.tsar"))
+		if err != nil {
+			return nil, err
+		}
+		tsIndex, err := tsar.UnmarshalIndex(data)
+		if err != nil {
+			return nil, err
+		}
+		entries, err := tsIndex.Find(prefix, tsar.MatchPrefix)
+		if err != nil {
+			return nil, err
+		}
 
-	return append(tagFiles, tsFiles...), nil
+		tsFiles = slicez.Flatten(slicez.Map(entries, func(entry *tsar.Entry) []string {
+			return slicez.Map(entry.Pointers, func(a uint32) string {
+				f, err := fss.GetFilenameToPath(index.IdToName[int(a)])
+				if err != nil {
+					return ""
+				}
+				if _, err := os.Stat(f); errors.Is(err, os.ErrNotExist) {
+					return ""
+				}
+				return f
+			})
+		}))
+	}
+
+	return slicez.Uniq(slicez.Filter(append(tagFiles, tsFiles...), func(s string) bool {
+		return len(s) > 0
+	})), nil
 }
 
 func page(files []string, printer printer.Printer) error {
@@ -352,12 +452,102 @@ func cat(files []string, printer printer.Printer) io.Reader {
 	return r
 }
 
-func reindex(c *cli.Context) error {
+func updateIndex(file string) error {
 
-	index := mark.Index{
-		IdToNotes: map[int]string{},
-		TagsToId:  map[string][]int{},
+	data, err := ioutil.ReadFile(file)
+	if err != nil {
+		return err
 	}
+	header, content, err := mark.UnmarshalNote(data)
+	if err != nil {
+		return err
+	}
+
+	// Updating json mapping index
+
+	jsonIndexName := filepath.Join(fss.GetStoragePath(), "index.json")
+	var jsonindexdata = []byte("{}")
+
+	if _, err := os.Stat(jsonIndexName); err == nil {
+		jsonindexdata, err = ioutil.ReadFile(jsonIndexName)
+		if err != nil {
+			return err
+		}
+	}
+
+	var jsonindex = mark.NewIndex()
+	err = json.Unmarshal(jsonindexdata, &jsonindex)
+	if err != nil {
+		return err
+	}
+
+	name := filepath.Base(file)
+	maxId := slicez.Max[int](mapz.Keys(jsonindex.IdToName)...)
+	nameToId := mapz.Remap(jsonindex.IdToName, func(k int, v string) (string, int) {
+		return v, k
+	})
+	id, found := nameToId[name]
+	if !found {
+		id = maxId + 1
+		jsonindex.IdToName[id] = name
+	}
+
+	// Remove old tags from index
+	for _, tag := range jsonindex.IdToTags[id] {
+		jsonindex.TagsToId[tag] = slicez.Reject(jsonindex.TagsToId[tag], compare.EqualOf(id))
+	}
+
+	// Adds current tags
+	jsonindex.IdToTags[id] = append([]string{}, header.Tags...)
+	for _, tag := range jsonindex.IdToTags[id] {
+		tags := jsonindex.TagsToId[tag]
+		jsonindex.TagsToId[tag] = slicez.Uniq(append(tags, id))
+	}
+
+	jsonindexdata, err = json.Marshal(jsonindex)
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(jsonIndexName, jsonindexdata, 0644)
+	if err != nil {
+		return err
+	}
+
+	// Updating tsindexdata could be slow eventually?
+	tsarIndexName := filepath.Join(fss.GetStoragePath(), "index.tsar")
+	var tsindex = &tsar.Index{}
+	var tsindexdata []byte
+	if _, err := os.Stat(tsarIndexName); err == nil {
+		tsindexdata, err = ioutil.ReadFile(tsarIndexName)
+		if err != nil {
+			return err
+		}
+		tsindex, err = tsar.UnmarshalIndex(tsindexdata)
+		if err != nil {
+			return err
+		}
+	}
+
+	wordlist := tsindex.EntryList()
+	for _, word := range ts.TokenizeText(string(content)) {
+		err = wordlist.Append(word, uint32(id))
+		if err != nil {
+			return err
+		}
+	}
+	tsindex = wordlist.ToIndex()
+	tsindexdata = tsar.MarshalIndex(tsindex)
+	err = ioutil.WriteFile(tsarIndexName, tsindexdata, 0644)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func reIndex(c *cli.Context) error {
+
+	index := mark.NewIndex()
 	wordlist := tsar.NewEntryList()
 
 	files, err := ls("")
@@ -365,8 +555,8 @@ func reindex(c *cli.Context) error {
 		return err
 	}
 
-	for i, f := range slicez.Sort(files) {
-		index.IdToNotes[i] = filepath.Base(f)
+	for id, f := range slicez.Sort(files) {
+		index.IdToName[id] = filepath.Base(f)
 		data, err := ioutil.ReadFile(f)
 		if err != nil {
 			return err
@@ -375,12 +565,13 @@ func reindex(c *cli.Context) error {
 		if err != nil {
 			return err
 		}
+		index.IdToTags[id] = header.Tags
 		for _, tag := range header.Tags {
 			tags := index.TagsToId[tag]
-			index.TagsToId[tag] = append(tags, i)
+			index.TagsToId[tag] = append(tags, id)
 		}
 		for _, word := range ts.TokenizeText(string(content)) {
-			err = wordlist.Append(word, uint32(i))
+			err = wordlist.Append(word, uint32(id))
 			if err != nil {
 				return err
 			}

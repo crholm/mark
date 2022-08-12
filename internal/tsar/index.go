@@ -25,6 +25,14 @@ type Index struct {
 	entries     []*Entry
 }
 
+func (i *Index) EntryList() EntryList {
+	l := NewEntryList()
+	for _, e := range i.entries {
+		l[e.Key] = e.Pointers
+	}
+	return l
+}
+
 func (i *Index) Find(needle string, match Matcher) ([]*Entry, error) {
 	if i.reader == nil {
 		lo, hi := 0, len(i.entries)
