@@ -81,7 +81,8 @@ func main() {
 				},
 			},
 			{
-				Name: "pager",
+				Name:    "pager",
+				Aliases: []string{"page"},
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "pick",

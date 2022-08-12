@@ -47,12 +47,11 @@ func FormattedPrinter(header mark.Header, raw []byte) []byte {
 		title = fmt.Sprint(" ", header.Title, " ")
 	}
 
-	title = fmt.Sprintf("┌─%s──── %s",
+	title = fmt.Sprintf("┌─%s────",
 		title,
-		header.CreatedAt.In(time.Local).Format("Monday Jan 02 2006 - 15:04:05"),
 	)
-
-	title = fmt.Sprintf("%s%s\n", title, strings.Repeat("─", width-len([]rune(title))))
+	timestamp := header.CreatedAt.In(time.Local).Format("Monday Jan 02 2006 - 15:04:05")
+	title = fmt.Sprintf("%s%s %s\n", title, strings.Repeat("─", width-len([]rune(title))-len(timestamp)-2), timestamp)
 
 	render, err := glamour.NewTermRenderer(glamour.WithEnvironmentConfig(), glamour.WithWordWrap(width))
 	if err != nil {
