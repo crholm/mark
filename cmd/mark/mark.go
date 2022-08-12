@@ -3,16 +3,16 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/charmbracelet/glamour"
 	"github.com/modfin/henry/slicez"
 	"github.com/urfave/cli/v2"
-	"gopkg.in/yaml.v3"
 	"io"
 	"io/ioutil"
 	"log"
 	"mark"
+	"mark/internal/fss"
+	"mark/internal/printer"
+	"mark/internal/ts"
 	"mark/internal/tsar"
 	"os"
 	"os/exec"
@@ -35,60 +35,8 @@ func main() {
 		Usage: "Taken notes by writing things....",
 		Commands: []*cli.Command{
 			{
-				Name: "reindex",
-				Action: func(c *cli.Context) error {
-
-					index := mark.Index{
-						IdToNotes: map[int]string{},
-						TagsToId:  map[string][]int{},
-					}
-					wordlist := tsar.NewEntryList()
-
-					files, err := ls("")
-					if err != nil {
-						return err
-					}
-
-					for i, f := range slicez.Sort(files) {
-						index.IdToNotes[i] = filepath.Base(f)
-						data, err := ioutil.ReadFile(f)
-						if err != nil {
-							return err
-						}
-						header, content, err := unmarshalNote(data)
-						if err != nil {
-							return err
-						}
-						for _, tag := range header.Tags {
-							tags := index.TagsToId[tag]
-							index.TagsToId[tag] = append(tags, i)
-						}
-						for _, word := range tokenizeText(string(content)) {
-							err = wordlist.Append(word, uint32(i))
-							if err != nil {
-								return err
-							}
-						}
-					}
-
-					jsonindex, err := json.Marshal(index)
-					if err != nil {
-						return err
-					}
-
-					err = ioutil.WriteFile(filepath.Join(getStoragePath(), "index.json"), jsonindex, 0644)
-					if err != nil {
-						return err
-					}
-
-					tsindex := tsar.MarshalIndex(wordlist.ToIndex())
-					err = ioutil.WriteFile(filepath.Join(getStoragePath(), "index.tsar"), tsindex, 0644)
-					if err != nil {
-						return err
-					}
-
-					return nil
-				},
+				Name:   "reindex",
+				Action: reindex,
 			},
 			{
 				Name: "git",
@@ -99,7 +47,7 @@ func main() {
 						cmd.Stdin = os.Stdin
 						cmd.Stdout = os.Stdout
 						cmd.Stderr = os.Stderr
-						cmd.Dir = getStoragePath()
+						cmd.Dir = fss.GetStoragePath()
 						return cmd.Run()
 					}
 
@@ -144,7 +92,7 @@ func main() {
 						return nil
 					}
 
-					return page(files, getPrinter(c.String("format")))
+					return page(files, printer.Of(c.String("format")))
 				},
 			},
 			{
@@ -162,7 +110,7 @@ func main() {
 						return nil
 					}
 
-					_, err = io.Copy(os.Stdout, cat(files, getPrinter(c.String("format"))))
+					_, err = io.Copy(os.Stdout, cat(files, printer.Of(c.String("format"))))
 					return err
 				},
 			},
@@ -192,59 +140,7 @@ func main() {
 						Name: "raw",
 					},
 				},
-				Action: func(c *cli.Context) error {
-					prefix := c.Args().First()
-
-					files, err := ls(prefix)
-					if err != nil {
-						return err
-					}
-					if len(files) == 0 {
-						fmt.Println("no entries")
-						return nil
-					}
-					file := slicez.Nth(files, c.Int("offset"))
-
-					if c.Bool("raw") {
-						return editFile(file)
-					}
-
-					data, err := ioutil.ReadFile(file)
-					if err != nil {
-						return err
-					}
-					meta, content, err := unmarshalNote(data)
-					if err != nil {
-						return err
-					}
-
-					f, err := os.CreateTemp("", "mark.*.md")
-					if err != nil {
-						return err
-					}
-					defer os.Remove(f.Name())
-					_, err = f.Write(content)
-					if err != nil {
-						return err
-					}
-					err = f.Close()
-					err = editFile(f.Name())
-					if err != nil {
-						return err
-					}
-					content, err = ioutil.ReadFile(f.Name())
-					if err != nil {
-						return err
-					}
-
-					meta.UpdatedAt = time.Now()
-					meta.Tags = getTagsFromNote(content)
-					data, err = marshalNote(meta, content)
-					if err != nil {
-						return err
-					}
-					return ioutil.WriteFile(file, data, 0644)
-				},
+				Action: editNote,
 			},
 		},
 		Flags: []cli.Flag{
@@ -255,6 +151,60 @@ func main() {
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func editNote(c *cli.Context) error {
+	prefix := c.Args().First()
+
+	files, err := ls(prefix)
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		fmt.Println("no entries")
+		return nil
+	}
+	file := slicez.Nth(files, c.Int("offset"))
+
+	if c.Bool("raw") {
+		return editFile(file)
+	}
+
+	data, err := ioutil.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	meta, content, err := mark.UnmarshalNote(data)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.CreateTemp("", "mark.*.md")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	_, err = f.Write(content)
+	if err != nil {
+		return err
+	}
+	err = f.Close()
+	err = editFile(f.Name())
+	if err != nil {
+		return err
+	}
+	content, err = ioutil.ReadFile(f.Name())
+	if err != nil {
+		return err
+	}
+
+	meta.UpdatedAt = time.Now()
+	meta.Tags = ts.GetTagsFromNote(content)
+	data, err = mark.MarshalNote(meta, content)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(file, data, 0644)
 }
 
 func newNote(c *cli.Context) error {
@@ -276,12 +226,12 @@ func newNote(c *cli.Context) error {
 
 	contentBytes := []byte(strings.Join(content, " "))
 
-	meta.Tags = getTagsFromNote(contentBytes)
-	note, err := marshalNote(meta, contentBytes)
+	meta.Tags = ts.GetTagsFromNote(contentBytes)
+	note, err := mark.MarshalNote(meta, contentBytes)
 	if err != nil {
 		return err
 	}
-	err = saveNote(meta, note)
+	err = fss.SaveNote(meta, note)
 	if err != nil {
 		return err
 	}
@@ -289,30 +239,58 @@ func newNote(c *cli.Context) error {
 }
 
 func ls(prefix string) ([]string, error) {
-	files, err := filepath.Glob(fmt.Sprintf("%s/*/*/%s*.md", getLibPath(), prefix))
+	var date = regexp.MustCompile("^[0-9-:]*$")
+
+	if len(prefix) == 0 || date.MatchString(prefix) {
+		files, err := filepath.Glob(fmt.Sprintf("%s/*/*/%s*.md", fss.GetLibPath(), prefix))
+		if err != nil {
+			return nil, err
+		}
+		return slicez.Reverse(slicez.Sort(files)), nil
+	}
+
+	data, _ := ioutil.ReadFile(filepath.Join(fss.GetStoragePath(), "index.tsar"))
+	tsIndex, err := tsar.UnmarshalIndex(data)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := tsIndex.Find(prefix, tsar.MatchPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(prefix) > 0 {
-		data, _ := ioutil.ReadFile(filepath.Join(getStoragePath(), "index.tsar"))
-		i, err := tsar.UnmarshalIndex(data)
-		if err != nil {
-			return nil, err
-		}
-
-		e, err := i.Find(prefix, tsar.MatchPrefix)
-		if err != nil {
-			return nil, err
-		}
-		for _, ee := range e {
-			fmt.Println("look for file", ee)
-		}
+	index := mark.NewIndex()
+	data, err = ioutil.ReadFile(filepath.Join(fss.GetStoragePath(), "index.json"))
+	if err != nil {
+		return nil, err
 	}
-	return slicez.Reverse(slicez.Sort(files)), nil
+	err = json.Unmarshal(data, &index)
+	if err != nil {
+		return nil, err
+	}
+
+	tagFiles := slicez.Map(index.TagsToId[prefix], func(a int) string {
+		f, err := fss.GetFilenameToPath(index.IdToNotes[a])
+		if err != nil {
+			return ""
+		}
+		return f
+	})
+
+	tsFiles := slicez.Uniq(slicez.Flatten(slicez.Map(entries, func(entry *tsar.Entry) []string {
+		return slicez.Map(entry.Pointers, func(a uint32) string {
+			f, err := fss.GetFilenameToPath(index.IdToNotes[int(a)])
+			if err != nil {
+				return ""
+			}
+			return f
+		})
+	})))
+
+	return append(tagFiles, tsFiles...), nil
 }
 
-func page(files []string, printer printer) error {
+func page(files []string, printer printer.Printer) error {
 
 	pager := os.Getenv("PAGER")
 	if len(pager) == 0 {
@@ -347,7 +325,7 @@ func editFile(file string) error {
 	return cmd.Run()
 }
 
-func cat(files []string, printer printer) io.Reader {
+func cat(files []string, printer printer.Printer) io.Reader {
 	r, w := io.Pipe()
 	go func() {
 		defer w.Close()
@@ -357,7 +335,7 @@ func cat(files []string, printer printer) io.Reader {
 				panic(err)
 			}
 
-			header, content, err := unmarshalNote(data)
+			header, content, err := mark.UnmarshalNote(data)
 			if err != nil {
 				panic(err)
 			}
@@ -374,140 +352,56 @@ func cat(files []string, printer printer) io.Reader {
 	return r
 }
 
-func getPrinter(printer string) printer {
-	switch printer {
-	case "raw":
-		return rawPrinter
-	case "plain":
-		return plainPrinter
-	default:
-		return formattedPrinter
+func reindex(c *cli.Context) error {
+
+	index := mark.Index{
+		IdToNotes: map[int]string{},
+		TagsToId:  map[string][]int{},
 	}
-}
+	wordlist := tsar.NewEntryList()
 
-type printer = func(header mark.Header, raw []byte) []byte
-
-func rawPrinter(header mark.Header, raw []byte) []byte {
-	data, err := marshalNote(header, raw)
+	files, err := ls("")
 	if err != nil {
-		panic(err)
-	}
-	return append(append([]byte(nil), data...), []byte("\n")...)
-}
-
-func plainPrinter(header mark.Header, raw []byte) []byte {
-	title := fmt.Sprintf("--- %s --- %s\n", header.CreatedAt.In(time.Local).Format("Monday Jan 02 2006 - 15:04:05"), header.Title)
-
-	content := append([]byte(" "), bytes.ReplaceAll(raw, []byte("\n"), []byte("\n "))...)
-	footer := "\n\n"
-	return append(append([]byte(title), content...), []byte(footer)...)
-
-}
-
-func formattedPrinter(header mark.Header, raw []byte) []byte {
-	width := 110
-
-	title := ""
-	if len(header.Title) > 0 {
-		title = fmt.Sprint(" ", header.Title, " ")
+		return err
 	}
 
-	title = fmt.Sprintf("┌─%s──── %s",
-		title,
-		header.CreatedAt.In(time.Local).Format("Monday Jan 02 2006 - 15:04:05"),
-	)
-
-	title = fmt.Sprintf("%s%s\n", title, strings.Repeat("─", width-len([]rune(title))))
-
-	render, err := glamour.NewTermRenderer(glamour.WithEnvironmentConfig(), glamour.WithWordWrap(width))
-	if err != nil {
-		panic(err)
-	}
-	out, err := render.RenderBytes(raw)
-	if err != nil {
-		panic(err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	var content string
-	for i, s := range lines {
-		s := strings.TrimSpace(s)
-		content += "│" + s
-		// don't add an artificial newline after the last split
-		if i+1 < len(lines) {
-			content += "\n"
+	for i, f := range slicez.Sort(files) {
+		index.IdToNotes[i] = filepath.Base(f)
+		data, err := ioutil.ReadFile(f)
+		if err != nil {
+			return err
+		}
+		header, content, err := mark.UnmarshalNote(data)
+		if err != nil {
+			return err
+		}
+		for _, tag := range header.Tags {
+			tags := index.TagsToId[tag]
+			index.TagsToId[tag] = append(tags, i)
+		}
+		for _, word := range ts.TokenizeText(string(content)) {
+			err = wordlist.Append(word, uint32(i))
+			if err != nil {
+				return err
+			}
 		}
 	}
-	footer := "\n└" + strings.Repeat("─", len([]rune(title))-2) + "\n\n"
-	return append(append([]byte(title), []byte(content)...), []byte(footer)...)
 
-}
-
-func getFilename(meta mark.Header) string {
-	return fmt.Sprintf("%s.md", meta.CreatedAt.In(time.UTC).Format("2006-01-02T15:04:05Z0700_Monday"))
-}
-func getLibPath() string {
-	return filepath.Join(getStoragePath(), "lib")
-}
-func getPath(meta mark.Header) string {
-	return filepath.Join(getLibPath(), meta.CreatedAt.Format("2006"), meta.CreatedAt.Format("01"))
-}
-func getFullPath(meta mark.Header) string {
-	return filepath.Join(getPath(meta), getFilename(meta))
-}
-
-func saveNote(meta mark.Header, content []byte) error {
-	_ = os.MkdirAll(getPath(meta), 0755)
-	err := ioutil.WriteFile(getFullPath(meta), content, 0644)
-	return err
-}
-
-func unmarshalNote(data []byte) (meta mark.Header, content []byte, err error) {
-	data = bytes.TrimLeft(data, "-\n")
-	header, content, found := bytes.Cut(data, []byte("---"))
-	if !found {
-		err = errors.New("could not find header")
-		return
-	}
-	err = yaml.Unmarshal(header, &meta)
-	return meta, bytes.TrimSpace(content), err
-}
-
-func getTagsFromNote(content []byte) []string {
-	r := regexp.MustCompile("#[0-9a-zA-Z0-9À-ÖØ-öø-ÿĀ-ƿ_-]+")
-	tags := r.FindAll(content, -1)
-	return slicez.Map(tags, func(a []byte) string {
-		return string(bytes.TrimLeft(a, "#"))
-	})
-}
-
-func marshalNote(meta mark.Header, content []byte) ([]byte, error) {
-	header, err := yaml.Marshal(&meta)
+	jsonindex, err := json.Marshal(index)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return slicez.Concat([]byte("---\n"), header, []byte("---\n"), content, []byte("\n")), nil
-}
 
-func getStoragePath() string {
-	dirname, err := os.UserHomeDir()
+	err = ioutil.WriteFile(filepath.Join(fss.GetStoragePath(), "index.json"), jsonindex, 0644)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	path := filepath.Join(dirname, ".mark")
-	_ = os.MkdirAll(path, 0755)
-	return path
-}
 
-func tokenizeText(text string) []string {
-	numbers := regexp.MustCompile("^[0-9]*$")
-	text = strings.ReplaceAll(text, "\t", " ")
-	text = strings.ReplaceAll(text, "\n", " ")
-	return slicez.Filter(slicez.Map(strings.Split(text, " "), func(word string) string {
-		word = strings.Trim(strings.TrimSpace(word), ",.-/:;'\"!?")
-		word = strings.ToLower(word)
-		if numbers.MatchString(word) {
-			return ""
-		}
-		return word
-	}), func(s string) bool { return len(s) > 0 })
+	tsindex := tsar.MarshalIndex(wordlist.ToIndex())
+	err = ioutil.WriteFile(filepath.Join(fss.GetStoragePath(), "index.tsar"), tsindex, 0644)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
