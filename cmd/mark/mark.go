@@ -62,7 +62,7 @@ func main() {
 				Action: func(c *cli.Context) error {
 
 					exe := func(args []string) error {
-						cmd := exec.Command("/proc/self", args...)
+						cmd := exec.Command("/proc/self/exe", args...)
 						cmd.Stdin = os.Stdin
 						cmd.Stdout = os.Stdout
 						cmd.Stderr = os.Stderr
@@ -194,29 +194,7 @@ func main() {
 	}
 }
 
-func editNote(c *cli.Context) error {
-	prefix := c.Args().First()
-
-	files, err := ls(prefix)
-	if err != nil {
-		return err
-	}
-	if len(files) == 0 {
-		fmt.Println("no entries")
-		return nil
-	}
-
-	file, err := pickFile(files)
-	if err != nil {
-		return err
-	}
-
-	defer updateIndex(file)
-
-	if c.Bool("raw") {
-		return editFile(file)
-	}
-
+func doEdit(file string) error {
 	data, err := ioutil.ReadFile(file)
 	if err != nil {
 		return err
@@ -254,6 +232,30 @@ func editNote(c *cli.Context) error {
 	return ioutil.WriteFile(file, data, 0644)
 }
 
+func editNote(c *cli.Context) error {
+	prefix := c.Args().First()
+
+	files, err := ls(prefix)
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		fmt.Println("no entries")
+		return nil
+	}
+
+	file, err := pickFile(files)
+	if err != nil {
+		return err
+	}
+
+	defer updateIndex(file)
+	if c.Bool("raw") {
+		return editFile(file)
+	}
+	return doEdit(file)
+}
+
 func pickFile(files []string) (string, error) {
 
 	if len(files) == 1 {
@@ -265,7 +267,7 @@ func pickFile(files []string) (string, error) {
 	for i, f := range files {
 		fmt.Println(i+1, "-", strings.TrimSuffix(filepath.Base(f), ".md"))
 	}
-	fmt.Print("> ")
+	fmt.Print("? ")
 	var i int
 	_, err := fmt.Scanf("%d", &i)
 	if err != nil {
@@ -302,6 +304,11 @@ func newNote(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+
+	if c.Args().Len() == 0 {
+		doEdit(filename)
+	}
+
 	return updateIndex(filename)
 }
 
@@ -367,7 +374,7 @@ func ls(prefix string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		entries, err := tsIndex.Find(prefix, tsar.MatchPrefix)
+		entries, err := tsIndex.Find(strings.ToLower(prefix), tsar.MatchPrefix)
 		if err != nil {
 			return nil, err
 		}
