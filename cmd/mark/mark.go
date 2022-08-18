@@ -82,7 +82,7 @@ func main() {
 			},
 			{
 				Name:    "pager",
-				Aliases: []string{"page"},
+				Aliases: []string{"page", "p"},
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "pick",
@@ -114,7 +114,8 @@ func main() {
 				},
 			},
 			{
-				Name: "cat",
+				Name:    "cat",
+				Aliases: []string{"c"},
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "pick",
@@ -175,7 +176,8 @@ func main() {
 				},
 			},
 			{
-				Name: "edit",
+				Name:    "edit",
+				Aliases: []string{"e"},
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name: "raw",
