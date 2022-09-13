@@ -33,54 +33,26 @@ var grep bool
 func main() {
 
 	app := &cli.App{
-		Name:  "mark",
-		Usage: "Taken notes by writing things....",
+		Name: "mark",
+		Authors: []*cli.Author{
+			&cli.Author{
+				Name:  "Rasmus Holm",
+				Email: "c.r.holm@gmail.com",
+			},
+		},
+		Usage: "Taken notes by writing things in the terminal....",
+		UsageText: `$ mark  ## opens $EDITOR to take a note
+SHORT HAND:
+  $ mark A title of a note -- and the content follows 
+  $ mark or just the content
+  $ mark "content with #tag"
+
+`,
 		Commands: []*cli.Command{
-			{
-				Name:   "reindex",
-				Action: reindex,
-			},
-			{
-				Name: "git",
-				Action: func(c *cli.Context) error {
 
-					exe := func(args []string) error {
-						cmd := exec.Command("git", args...)
-						cmd.Stdin = os.Stdin
-						cmd.Stdout = os.Stdout
-						cmd.Stderr = os.Stderr
-						cmd.Dir = fss.GetStoragePath()
-						return cmd.Run()
-					}
-
-					return exe(c.Args().Slice())
-				},
-			},
-			{
-				Name: "sync",
-				Action: func(c *cli.Context) error {
-
-					exe := func(args []string) error {
-						cmd := exec.Command("/proc/self/exe", args...)
-						cmd.Stdin = os.Stdin
-						cmd.Stdout = os.Stdout
-						cmd.Stderr = os.Stderr
-						return cmd.Run()
-					}
-
-					err := exe([]string{"git", "add", "."})
-					if err != nil {
-						fmt.Println("mark: are you sure you have git installed and the repo initialized? see `mark sync`", err)
-						return nil
-					}
-					exe([]string{"git", "commit", "-m", "sync commit"})
-					exe([]string{"git", "pull"})
-					exe([]string{"git", "push"})
-					return nil
-				},
-			},
 			{
 				Name:    "pager",
+				Usage:   "outputs notes to $PAGER, default less",
 				Aliases: []string{"page", "p"},
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
@@ -113,8 +85,10 @@ func main() {
 				},
 			},
 			{
-				Name:    "cat",
-				Aliases: []string{"c"},
+				Name:      "cat",
+				Usage:     "outputs notes to std out",
+				ArgsUsage: "[file | tag | free text search]",
+				Aliases:   []string{"c"},
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "pick",
@@ -147,38 +121,31 @@ func main() {
 				},
 			},
 			{
-				Name: "ls",
+				Name:      "ls",
+				Usage:     "list notes",
+				ArgsUsage: "[file | :tag | free text search]",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Usage: "list notes in a more verbose way, including tile and tags",
+						Name:  "v",
+					},
+				},
 				Action: func(c *cli.Context) error {
-					prefix := c.Args().First()
-
-					files, err := ls(prefix)
-					if err != nil {
-						return err
-					}
-					slicez.Each(slicez.Sort(files), func(f string) {
-						fmt.Println(filepath.Base(f))
-					})
-					return err
+					return clils(c, c.Bool("v"))
 				},
 			},
 			{
-				Name: "ll",
+				Name:      "ll",
+				ArgsUsage: "[file | :tag | free text search]",
+				Usage:     "list notes in a more verbose way, including tile and tags, shorthand for `mark ls -v`",
 				Action: func(c *cli.Context) error {
-					prefix := c.Args().First()
-
-					files, err := ls(prefix)
-					if err != nil {
-						return err
-					}
-					slicez.Each(slicez.Sort(files), func(f string) {
-						name, _ := ll(f)
-						fmt.Println(name)
-					})
-					return err
+					return clils(c, true)
 				},
 			},
 			{
-				Name: "rm",
+				Name:      "rm",
+				ArgsUsage: "[file | :tag | free text search]",
+				Usage:     "removes a note",
 				Action: func(c *cli.Context) error {
 					filename := c.Args().First()
 
@@ -200,8 +167,10 @@ func main() {
 				},
 			},
 			{
-				Name:    "edit",
-				Aliases: []string{"e"},
+				Name:      "edit",
+				ArgsUsage: "[file | :tag | free text search]",
+				Usage:     "allows you to edit a note, it uses $EDITOR and defaults to nano",
+				Aliases:   []string{"e"},
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name: "raw",
@@ -209,21 +178,93 @@ func main() {
 				},
 				Action: editNote,
 			},
+			{
+				Name:   "reindex",
+				Usage:  "recalculates all free-text-search indexes",
+				Action: reindex,
+			},
+			{
+				Name:  "sync",
+				Usage: "equivalent to 'git add . && git commit -m \"sync\" && git pull && git push",
+				Action: func(c *cli.Context) error {
+
+					exe := func(args []string) error {
+						cmd := exec.Command("/proc/self/exe", args...)
+						cmd.Stdin = os.Stdin
+						cmd.Stdout = os.Stdout
+						cmd.Stderr = os.Stderr
+						return cmd.Run()
+					}
+
+					err := exe([]string{"git", "add", "."})
+					if err != nil {
+						fmt.Println("mark: are you sure you have git installed and the repo initialized? see `mark sync`", err)
+						return nil
+					}
+					exe([]string{"git", "commit", "-m", "sync commit"})
+					exe([]string{"git", "pull"})
+					exe([]string{"git", "push"})
+					return nil
+				},
+			},
+			{
+				Name:  "git",
+				Usage: "will performe git commands in dir the archive of notes is stored",
+				Action: func(c *cli.Context) error {
+
+					exe := func(args []string) error {
+						cmd := exec.Command("git", args...)
+						cmd.Stdin = os.Stdin
+						cmd.Stdout = os.Stdout
+						cmd.Stderr = os.Stderr
+						cmd.Dir = fss.GetStoragePath()
+						return cmd.Run()
+					}
+
+					return exe(c.Args().Slice())
+				},
+			},
 		},
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "format"},
-			&cli.BoolFlag{Name: "grep"},
+			&cli.StringFlag{
+				Name:  "format",
+				Usage: "defines the formatter of the md files used when outputting content [markdown | plain | raw | annotated]",
+
+				DefaultText: "markdown",
+			},
+			&cli.BoolFlag{
+				Usage: "when selecting a file to print or edit and MARK_PICKER is set, it will output the entire files to the picker instead of the filenames",
+				Name:  "grep",
+			},
 		},
 		Action: newNote,
 	}
 
 	app.Before = func(context *cli.Context) error {
-		grep = context.Bool("grep") // ugly some refactoring is probably best to do
+		grep = context.Bool("grep") // ugly, ugly some refactoring is probably best to do
 		return nil
 	}
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func clils(c *cli.Context, verbose bool) error {
+	prefix := c.Args().First()
+
+	files, err := ls(prefix)
+	if err != nil {
+		return err
+	}
+	slicez.Each(slicez.Sort(files), func(f string) {
+		if verbose {
+			name, _ := ll(f)
+			fmt.Println(name)
+			return
+		}
+		fmt.Println(filepath.Base(f))
+	})
+	return err
 }
 
 func doEdit(file string) error {
@@ -327,7 +368,7 @@ func ll(f string) (string, error) {
 		parts = append(parts, fmt.Sprint(tags))
 	}
 	name := filepath.Base(f)
-	return fmt.Sprintf("%s %s %s", name, strings.Repeat(" ", 35-len(name)), strings.Join(parts, " ")), nil
+	return fmt.Sprintf("%s %s %s", name, strings.Repeat(" ", 33-len(name)), strings.Join(parts, " ")), nil
 }
 
 func pickFile(files []string) (string, error) {
