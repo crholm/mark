@@ -151,8 +151,7 @@ You can also use a custom "picker" in a grep fashion. eg.
 
 ```bash
 $ export MARK_PICKER="fzf"
-$ export MARK_PICKER_MODE="grep"
-$ mark edit
+$ mark --grep edit
   2022-08-18_09:11:42Z_Thursday.md:2: title: "A note"                                                                                                                                                                                                         
   2022-08-18_09:11:42Z_Thursday.md:1: ---                                                                                                                                                                                                                        
   2022-09-13_12:57:19Z_Tuesday.md:10:                                                                                                                                                                                                                            
@@ -165,7 +164,9 @@ $ mark edit
   2022-09-13_12:57:19Z_Tuesday.md:3: alias: ""                                                                                                                                                                                                                   
   2022-09-13_12:57:19Z_Tuesday.md:2: title: "A test note"                                                                                                                                                                                                                   
 > 2022-09-13_12:57:19Z_Tuesday.md:1: ---                                                                                                                                                                                                                         
-  96/96                                                   
+  96/96            
+  
+## Or export MARK_PICKER_MODE="grep" can be used instead of flag --grep                                       
 ```
 
 

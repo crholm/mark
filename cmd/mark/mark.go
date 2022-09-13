@@ -28,6 +28,8 @@ import (
 	"time"
 )
 
+var grep bool
+
 func main() {
 
 	app := &cli.App{
@@ -181,9 +183,18 @@ func main() {
 					filename := c.Args().First()
 
 					file, err := fss.GetFilenameToPath(filename)
+					var files []string
 					if err != nil {
-						return err
+						files, err = ls(filename)
+						if err != nil {
+							return err
+						}
+						file, err = pickFile(files)
+						if err != nil {
+							return err
+						}
 					}
+
 					fmt.Println("rm", file)
 					return os.Remove(file)
 				},
@@ -201,9 +212,14 @@ func main() {
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "format"},
-			&cli.StringFlag{Name: "mode"},
+			&cli.BoolFlag{Name: "grep"},
 		},
 		Action: newNote,
+	}
+
+	app.Before = func(context *cli.Context) error {
+		grep = context.Bool("grep") // ugly some refactoring is probably best to do
+		return nil
 	}
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
@@ -332,6 +348,9 @@ func pickFile(files []string) (string, error) {
 
 		go func() {
 			mode := os.Getenv("MARK_PICKER_MODE")
+			if grep {
+				mode = "grep"
+			}
 			if mode != "grep" {
 				mode = "file"
 			}
@@ -360,7 +379,6 @@ func pickFile(files []string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		fmt.Println("FILE", string(b))
 		file, _, _ := strings.Cut(strings.TrimSpace(string(b)), " ")
 		file = strings.TrimRight(file, ":1234567890")
 		if len(file) == 0 {
