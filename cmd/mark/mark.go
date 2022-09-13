@@ -201,6 +201,7 @@ func main() {
 		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "format"},
+			&cli.StringFlag{Name: "mode"},
 		},
 		Action: newNote,
 	}
@@ -318,7 +319,6 @@ func pickFile(files []string) (string, error) {
 	if len(files) == 1 {
 		return files[0], nil
 	}
-
 	picker := os.Getenv("MARK_PICKER")
 	if len(picker) > 0 {
 		parts, err := shellwords.Parse(picker)
@@ -327,13 +327,27 @@ func pickFile(files []string) (string, error) {
 		}
 		cmd := exec.Command(parts[0], parts[1:]...)
 
-		input := strings.Join(
-			slicez.Map(files, func(f string) string {
-				s, _ := ll(f)
-				return s
-			}), "\n")
+		reader, writer := io.Pipe()
+		cmd.Stdin = reader
 
-		cmd.Stdin = bytes.NewReader([]byte(input))
+		go func() {
+			mode := os.Getenv("MARK_PICKER_MODE")
+			if mode != "grep" {
+				mode = "file"
+			}
+
+			switch mode {
+			case "grep":
+				_, _ = io.Copy(writer, cat(files, printer.AnnotatedPrinter))
+			default:
+				for _, f := range files {
+					s, _ := ll(f)
+					_, _ = writer.Write([]byte(s + "\n"))
+				}
+			}
+			_ = writer.Close()
+		}()
+
 		buf := bytes.NewBuffer(nil)
 		cmd.Stdout = buf
 		cmd.Stderr = os.Stderr
@@ -346,7 +360,9 @@ func pickFile(files []string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		fmt.Println("FILE", string(b))
 		file, _, _ := strings.Cut(strings.TrimSpace(string(b)), " ")
+		file = strings.TrimRight(file, ":1234567890")
 		if len(file) == 0 {
 			return "", errors.New("no selected file")
 		}
@@ -561,7 +577,7 @@ func cat(files []string, printer printer.Printer) io.Reader {
 				panic(err)
 			}
 
-			data = printer(header, content)
+			data = printer(header, content, file)
 			_, err = io.Copy(w, bytes.NewReader(data))
 
 			if err != nil {

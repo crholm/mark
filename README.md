@@ -142,9 +142,30 @@ $ mark rm 2022-08-12_14:04:52Z_Friday
 ```bash
 $ export MARK_PICKER="fzf --preview \"mark cat {1}\""
 $ mark edit
->2022-08-12_15:01:49Z_Friday.md       TODO [todo]           ┌──────────────────────────────────────────                  
- 2022-08-18_08:04:08Z_Thursday.md     Links                 │ ┌─   TODO ─────────── Friday Aug 12 2022                                                                       
- 2/2                                                        │ │    ## Done                                     
+>2022-08-12_15:01:49Z_Friday.md       TODO [todo]           ┌──────────────────────────────────────────
+ 2022-08-18_08:04:08Z_Thursday.md     Links                 │ ┌─   TODO ─────────── Friday Aug 12 2022                                                                      
+ 2/2                                                        │ │    ## Done                             
+```
+
+You can also use a custom "picker" in a grep fashion. eg.
+
+```bash
+$ export MARK_PICKER="fzf"
+$ export MARK_PICKER_MODE="grep"
+$ mark edit
+  2022-08-18_09:11:42Z_Thursday.md:2: title: "A note"                                                                                                                                                                                                         
+  2022-08-18_09:11:42Z_Thursday.md:1: ---                                                                                                                                                                                                                        
+  2022-09-13_12:57:19Z_Tuesday.md:10:                                                                                                                                                                                                                            
+  2022-09-13_12:57:19Z_Tuesday.md:9:                                                                                                                                                                                                                             
+  2022-09-13_12:57:19Z_Tuesday.md:8: cut                                                                                                                                                                                                                         
+  2022-09-13_12:57:19Z_Tuesday.md:7: ---                                                                                                                                                                                                                         
+  2022-09-13_12:57:19Z_Tuesday.md:6: updated_at: 2022-09-13T15:51:42.769978695+02:00                                                                                                                                                                             
+  2022-09-13_12:57:19Z_Tuesday.md:5: created_at: 2022-09-13T14:57:19.333373569+02:00                                                                                                                                                                             
+  2022-09-13_12:57:19Z_Tuesday.md:4: tags: ["example"]                                                                                                                                                                                                                    
+  2022-09-13_12:57:19Z_Tuesday.md:3: alias: ""                                                                                                                                                                                                                   
+  2022-09-13_12:57:19Z_Tuesday.md:2: title: "A test note"                                                                                                                                                                                                                   
+> 2022-09-13_12:57:19Z_Tuesday.md:1: ---                                                                                                                                                                                                                         
+  96/96                                                   
 ```
 
 
