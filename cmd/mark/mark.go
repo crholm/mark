@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -10,10 +11,12 @@ import (
 	"github.com/crholm/mark/internal/printer"
 	"github.com/crholm/mark/internal/ts"
 	"github.com/crholm/mark/internal/tsar"
+	"github.com/mattn/go-shellwords"
 	"github.com/modfin/henry/compare"
 	"github.com/modfin/henry/mapz"
 	"github.com/modfin/henry/slicez"
 	"github.com/urfave/cli/v2"
+	"gopkg.in/yaml.v3"
 	"io"
 	"io/ioutil"
 	"log"
@@ -25,12 +28,6 @@ import (
 	"time"
 )
 
-func check(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
 func main() {
 
 	app := &cli.App{
@@ -39,7 +36,7 @@ func main() {
 		Commands: []*cli.Command{
 			{
 				Name:   "reindex",
-				Action: reIndex,
+				Action: reindex,
 			},
 			{
 				Name: "git",
@@ -163,6 +160,22 @@ func main() {
 				},
 			},
 			{
+				Name: "ll",
+				Action: func(c *cli.Context) error {
+					prefix := c.Args().First()
+
+					files, err := ls(prefix)
+					if err != nil {
+						return err
+					}
+					slicez.Each(slicez.Sort(files), func(f string) {
+						name, _ := ll(f)
+						fmt.Println(name)
+					})
+					return err
+				},
+			},
+			{
 				Name: "rm",
 				Action: func(c *cli.Context) error {
 					filename := c.Args().First()
@@ -258,16 +271,101 @@ func editNote(c *cli.Context) error {
 	return doEdit(file)
 }
 
+func ll(f string) (string, error) {
+
+	file, err := os.Open(f)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	buf := bufio.NewReader(file)
+	header := ""
+	_, _, err = buf.ReadLine() // discard
+	if err != nil {
+		return "", err
+	}
+	line := ""
+	for line != "---" {
+		b, _, err := buf.ReadLine() // discard
+		if err != nil {
+			return "", err
+		}
+		line = string(b)
+		header += fmt.Sprintln(line)
+	}
+	var meta mark.Header
+	err = yaml.Unmarshal([]byte(header), &meta)
+	if err != nil {
+		return "", err
+	}
+
+	title := strings.TrimSpace(meta.Title)
+	tags := meta.Tags
+	var parts []string
+	if len(title) > 0 {
+		parts = append(parts, title)
+	}
+	if len(tags) > 0 {
+		parts = append(parts, fmt.Sprint(tags))
+	}
+	name := filepath.Base(f)
+	return fmt.Sprintf("%s %s %s", name, strings.Repeat(" ", 35-len(name)), strings.Join(parts, " ")), nil
+}
+
 func pickFile(files []string) (string, error) {
 
 	if len(files) == 1 {
 		return files[0], nil
 	}
 
+	picker := os.Getenv("MARK_PICKER")
+	if len(picker) > 0 {
+		parts, err := shellwords.Parse(picker)
+		if err != nil {
+			return "", err
+		}
+		cmd := exec.Command(parts[0], parts[1:]...)
+
+		input := strings.Join(
+			slicez.Map(files, func(f string) string {
+				s, _ := ll(f)
+				return s
+			}), "\n")
+
+		cmd.Stdin = bytes.NewReader([]byte(input))
+		buf := bytes.NewBuffer(nil)
+		cmd.Stdout = buf
+		cmd.Stderr = os.Stderr
+
+		err = cmd.Run()
+		if err != nil {
+			return "", err
+		}
+		b, err := ioutil.ReadAll(buf)
+		if err != nil {
+			return "", err
+		}
+		file, _, _ := strings.Cut(strings.TrimSpace(string(b)), " ")
+		if len(file) == 0 {
+			return "", errors.New("no selected file")
+		}
+
+		f, _ := slicez.Find(files, func(e string) bool {
+			return strings.HasSuffix(e, file)
+		})
+
+		return f, nil
+	}
+
 	files = slicez.Take(files, 10)
 
 	for i, f := range files {
-		fmt.Println(i+1, "-", strings.TrimSuffix(filepath.Base(f), ".md"))
+		name, err := ll(f)
+		if err != nil {
+			return "", err
+		}
+		fmt.Println(i+1, "-", name)
 	}
 	fmt.Print("? ")
 	var i int
@@ -315,8 +413,17 @@ func newNote(c *cli.Context) error {
 }
 
 func ls(prefix string) ([]string, error) {
-	var filename = regexp.MustCompile("^[0-9-_:]*(|Z)(|_)(|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)()$")
 
+	if prefix == "-" {
+		reader := bufio.NewReader(os.Stdin)
+		line, _, err := reader.ReadLine()
+		if err != nil {
+			return nil, err
+		}
+		prefix = strings.TrimSpace(string(line))
+	}
+
+	var filename = regexp.MustCompile("^([0-9]{3,4})")
 	if len(prefix) == 0 || filename.MatchString(prefix) {
 
 		year := "*"
@@ -329,12 +436,14 @@ func ls(prefix string) ([]string, error) {
 			month = prefix[5:7]
 		}
 
-		glob := fmt.Sprintf("%s/%s/%s/%s*.md", fss.GetLibPath(), year, month, prefix)
+		glob := fmt.Sprintf("%s/%s/%s/%s*", fss.GetLibPath(), year, month, prefix)
 		files, err := filepath.Glob(glob)
 		if err != nil {
 			return nil, err
 		}
-		return slicez.Reverse(slicez.Sort(files)), nil
+		if len(files) > 0 {
+			return slicez.Reverse(slicez.Sort(files)), nil
+		}
 	}
 
 	var specificTag = prefix[0] == ':' || prefix[0] == '#'
@@ -411,9 +520,6 @@ func page(files []string, printer printer.Printer) error {
 	cmd := exec.Command(pa[0], pa[1:]...)
 	b, _ := ioutil.ReadAll(cat(files, printer))
 	cmd.Stdin = bytes.NewReader(b) // for some reason having a reader with all the content from the beginning works with less, but not a regular reader.
-	//cmd.Stdin = cat(files)
-	//cmd.Stdin = os.Stdin
-	//cmd.Stdin = bufio.NewReader(cat(files))
 	cmd.Stdout = os.Stdout
 
 	return cmd.Run()
@@ -432,7 +538,12 @@ func editFile(file string) error {
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
-	return cmd.Run()
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("The err", err)
+		return err
+	}
+	return nil
 }
 
 func cat(files []string, printer printer.Printer) io.Reader {
@@ -555,7 +666,7 @@ func updateIndex(file string) error {
 	return nil
 }
 
-func reIndex(c *cli.Context) error {
+func reindex(c *cli.Context) error {
 
 	index := mark.NewIndex()
 	wordlist := tsar.NewEntryList()

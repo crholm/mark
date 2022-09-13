@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/charmbracelet/glamour v0.5.0
+	github.com/mattn/go-shellwords v1.0.12
 	github.com/modfin/henry v0.0.0-20220425073158-37972c80b10d
 	github.com/urfave/cli/v2 v2.11.1
 	gopkg.in/yaml.v3 v3.0.1

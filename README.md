@@ -62,6 +62,13 @@ $ mark ls
 2022-08-12_14:05:08Z_Friday.md
 2022-08-12_14:05:14Z_Friday.md
 
+## Lists title and tags
+$ mark ll
+2022-08-12_15:01:49Z_Friday.md       TODO [todo]
+2022-08-18_08:04:08Z_Thursday.md     Links
+2022-08-18_09:11:42Z_Thursday.md     
+
+
 ## Prefix matching 
 $ mark ls 2022-08-12_14:04
 2022-08-12_14:04:49Z_Friday.md
@@ -90,7 +97,7 @@ $ mark cat 2022-08-12_14:04:52Z_Friday
 ```
 
 **Look at notes using a pager**
-```bashgo
+```bash
 ## Opens a pager with all notes (uses whats in env PAGER or less) 
 $ mark pager 
 
@@ -129,6 +136,17 @@ $ mark edit content
 ## Removes one particular note
 $ mark rm 2022-08-12_14:04:52Z_Friday
 ```
+
+
+**Note selector / Picker / FZF**
+```bash
+$ export MARK_PICKER="fzf --preview \"mark cat {1}\""
+$ mark edit
+ 2022-08-12_15:01:49Z_Friday.md       TODO [todo]           ┌────────────────────────────────────────────────────────────                  
+>2022-08-18_08:04:08Z_Thursday.md     Links                 │ ┌─   TODO ──────────────────────────── Friday Aug 12 2022                                                                       
+ 2/2                                                        │ │    ## Done                                     
+```
+
 
 **git stuff**
 ```bash

@@ -16,7 +16,7 @@ func GetTagsFromNote(content []byte) []string {
 }
 
 func TokenizeText(text string) []string {
-	var splitter = regexp.MustCompile("[^a-zA-ZÀ-ÖØ-öø-ÿĀ-ƿ]")
+	var splitter = regexp.MustCompile("(\\s+)|([!-/:-@[-`{-~])")
 	return slicez.Filter(slicez.Map(splitter.Split(text, -1), func(word string) string {
 		return strings.ToLower(strings.TrimSpace(word))
 	}), func(s string) bool { return len(s) > 0 })
