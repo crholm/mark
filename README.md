@@ -140,10 +140,10 @@ $ mark rm 2022-08-12_14:04:52Z_Friday
 
 **Note selector / Picker / FZF**
 ```bash
-$ export MARK_PICKER="fzf --preview \"mark cat {1}\""
+$ export MARK_PICKER="fzf --preview \"mark cat {1}\"
 $ mark edit
- 2022-08-12_15:01:49Z_Friday.md       TODO [todo]           ┌────────────────────────────────────────────────────────────                  
->2022-08-18_08:04:08Z_Thursday.md     Links                 │ ┌─   TODO ──────────────────────────── Friday Aug 12 2022                                                                       
+>2022-08-12_15:01:49Z_Friday.md       TODO [todo]           ┌──────────────────────────────────────────                  
+ 2022-08-18_08:04:08Z_Thursday.md     Links                 │ ┌─   TODO ─────────── Friday Aug 12 2022                                                                       
  2/2                                                        │ │    ## Done                                     
 ```
 
